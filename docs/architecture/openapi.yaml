@@ -1,0 +1,711 @@
+openapi: 3.1.0
+info:
+  title: Enterprise School ERP API
+  version: 1.0.0
+  description: |
+    Multi-tenant School ERP REST API for Indian schools.
+    All authenticated endpoints require `Authorization: Bearer <JWT>`.
+    Tenant is resolved from the JWT claim. Super Admin may pass `X-Tenant-Id` header to impersonate.
+  contact:
+    name: School ERP Support
+    email: support@schoolerp.in
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://api.schoolerp.in/api/v1
+    description: Production
+  - url: http://localhost:5000/api/v1
+    description: Local Development
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  headers:
+    XTenantId:
+      description: Tenant ID for Super Admin impersonation
+      schema: { type: string }
+    XBranchId:
+      description: Branch scope for the request
+      schema: { type: string }
+    IdempotencyKey:
+      description: Idempotency key for payment and admission endpoints
+      schema: { type: string }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: { type: array, items: { type: string } }
+            requestId: { type: string }
+
+    PaginationMeta:
+      type: object
+      properties:
+        page: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
+        totalPages: { type: integer }
+
+    Tenant:
+      type: object
+      properties:
+        _id: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        board: { type: string, enum: [CBSE, ICSE, IB, CAMBRIDGE, STATE, OTHER] }
+        plan: { type: string, enum: [starter, growth, enterprise, whitelabel] }
+        status: { type: string, enum: [trial, active, suspended, cancelled] }
+        contactEmail: { type: string }
+        contactPhone: { type: string }
+        settings: { type: object }
+        usageLimits: { type: object }
+        featureFlags: { type: object }
+        createdAt: { type: string, format: date-time }
+
+    Student:
+      type: object
+      properties:
+        _id: { type: string }
+        tenantId: { type: string }
+        branchId: { type: string }
+        admissionNo: { type: string }
+        grNo: { type: string }
+        personalInfo:
+          type: object
+          properties:
+            name: { type: string }
+            dob: { type: string, format: date }
+            gender: { type: string, enum: [male, female, other] }
+            category: { type: string, enum: [general, obc, sc, st, ews] }
+        guardians:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              phone: { type: string }
+              relation: { type: string }
+              isPrimary: { type: boolean }
+        isActive: { type: boolean }
+        admissionDate: { type: string, format: date }
+
+    FeeDemand:
+      type: object
+      properties:
+        _id: { type: string }
+        studentId: { type: string }
+        installmentName: { type: string }
+        dueDate: { type: string, format: date }
+        totalAmount: { type: number }
+        totalPaid: { type: number }
+        totalDue: { type: number }
+        status: { type: string, enum: [pending, partial, paid, overdue, waived] }
+
+    FeePayment:
+      type: object
+      properties:
+        _id: { type: string }
+        receiptNo: { type: string }
+        amount: { type: number }
+        method: { type: string }
+        gateway: { type: string }
+        paidAt: { type: string, format: date-time }
+
+security:
+  - BearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  timestamp: { type: string }
+
+  # ─── AUTH ─────────────────────────────────────────────────────────────────
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email/phone + password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [emailOrPhone, password]
+              properties:
+                emailOrPhone: { type: string, example: admin@school.in }
+                password: { type: string, example: Admin@123 }
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      accessToken: { type: string }
+                      refreshToken: { type: string }
+                      user: { type: object }
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200': { description: Tokens refreshed }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout (revoke refresh token)
+      responses:
+        '200': { description: Logged out }
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request password reset OTP
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+      responses:
+        '200': { description: OTP sent }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user with permissions
+      responses:
+        '200': { description: Current user data }
+
+  # ─── TENANTS ──────────────────────────────────────────────────────────────
+  /tenants:
+    get:
+      tags: [SaaS Ops]
+      summary: List all tenants (Super Admin)
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+      responses:
+        '200': { description: Tenant list }
+    post:
+      tags: [SaaS Ops]
+      summary: Onboard new tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, slug, contactEmail, contactPhone, adminName, adminPassword, branchName, branchCity, branchState, branchPinCode]
+              properties:
+                name: { type: string }
+                slug: { type: string }
+                board: { type: string }
+                plan: { type: string }
+                contactEmail: { type: string }
+                contactPhone: { type: string }
+                adminName: { type: string }
+                adminPassword: { type: string }
+                branchName: { type: string }
+                branchCity: { type: string }
+                branchState: { type: string }
+                branchPinCode: { type: string }
+      responses:
+        '201': { description: Tenant created }
+
+  # ─── STUDENTS ─────────────────────────────────────────────────────────────
+  /students:
+    get:
+      tags: [Students]
+      summary: List students with pagination and filtering
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer }
+        - in: query
+          name: limit
+          schema: { type: integer }
+        - in: query
+          name: branchId
+          schema: { type: string }
+        - in: query
+          name: category
+          schema: { type: string, enum: [general, obc, sc, st, ews] }
+        - in: query
+          name: isRte
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Student list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Student' }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+    post:
+      tags: [Students]
+      summary: Create a new student
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Student' }
+      responses:
+        '201': { description: Student created }
+
+  /students/import:
+    post:
+      tags: [Students]
+      summary: Bulk import students (max 500)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                students:
+                  type: array
+                  maxItems: 500
+                  items: { $ref: '#/components/schemas/Student' }
+      responses:
+        '201': { description: Import result }
+
+  /students/promote:
+    post:
+      tags: [Students]
+      summary: Bulk promote students to next standard
+      responses:
+        '201': { description: Promotion result }
+
+  /students/{id}/360:
+    get:
+      tags: [Students]
+      summary: Get full 360 view of a student
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Student 360 data }
+
+  /students/{id}/tc:
+    post:
+      tags: [Students]
+      summary: Issue Transfer Certificate
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: TC issued }
+
+  # ─── ADMISSIONS ───────────────────────────────────────────────────────────
+  /admissions/enquiries:
+    get:
+      tags: [Admissions]
+      summary: List enquiries
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: source
+          schema: { type: string }
+      responses:
+        '200': { description: Enquiry list }
+    post:
+      tags: [Admissions]
+      summary: Create new enquiry (deduplicates by phone)
+      responses:
+        '201': { description: Enquiry created }
+
+  /admissions/enquiries/{id}/status:
+    patch:
+      tags: [Admissions]
+      summary: Update enquiry status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Status updated }
+
+  /admissions/{id}/confirm:
+    post:
+      tags: [Admissions]
+      summary: Confirm admission — creates Student + Enrollment (idempotent saga)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '201': { description: Admission confirmed }
+
+  /admissions/reports/funnel:
+    get:
+      tags: [Admissions]
+      summary: Admissions funnel report by status
+      responses:
+        '200': { description: Funnel data }
+
+  # ─── ATTENDANCE ───────────────────────────────────────────────────────────
+  /attendance/students/bulk:
+    post:
+      tags: [Attendance]
+      summary: Mark bulk attendance for a division (upsert)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branchId, academicYearId, standardId, divisionId, date, records]
+              properties:
+                branchId: { type: string }
+                academicYearId: { type: string }
+                standardId: { type: string }
+                divisionId: { type: string }
+                date: { type: string, format: date-time }
+                isPeriodWise: { type: boolean }
+                periodNo: { type: integer }
+                records:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      studentId: { type: string }
+                      status: { type: string, enum: [present, absent, late, leave, holiday] }
+      responses:
+        '200': { description: Attendance saved }
+
+  /attendance/students/{studentId}/summary:
+    get:
+      tags: [Attendance]
+      summary: Monthly attendance summary for a student
+      parameters:
+        - in: path
+          name: studentId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: month
+          schema: { type: integer }
+        - in: query
+          name: year
+          schema: { type: integer }
+      responses:
+        '200': { description: Attendance summary }
+
+  # ─── FEES ─────────────────────────────────────────────────────────────────
+  /fees/structures:
+    get:
+      tags: [Fees]
+      summary: List fee structures
+      responses:
+        '200': { description: Fee structures }
+    post:
+      tags: [Fees]
+      summary: Create fee structure
+      responses:
+        '201': { description: Created }
+
+  /fees/demands/generate:
+    post:
+      tags: [Fees]
+      summary: Generate fee demands for students (idempotent)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [studentIds, feeStructureId, installmentName, dueDate]
+              properties:
+                studentIds:
+                  type: array
+                  items: { type: string }
+                feeStructureId: { type: string }
+                installmentName: { type: string }
+                dueDate: { type: string, format: date }
+      responses:
+        '201': { description: Demands generated }
+
+  /fees/payments:
+    post:
+      tags: [Fees]
+      summary: Record offline fee payment (cash/cheque/NEFT)
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema: { type: string }
+      responses:
+        '201':
+          description: Payment recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/FeePayment' }
+
+  /fees/payments/webhook/razorpay:
+    post:
+      tags: [Fees]
+      summary: Razorpay webhook (HMAC verified)
+      security: []
+      responses:
+        '200': { description: Processed }
+
+  /fees/defaulters:
+    get:
+      tags: [Fees]
+      summary: List fee defaulters with pagination
+      responses:
+        '200': { description: Defaulters list }
+
+  /fees/daybook:
+    get:
+      tags: [Fees]
+      summary: Day book — fee collected on a given date
+      parameters:
+        - in: query
+          name: date
+          schema: { type: string, format: date }
+      responses:
+        '200': { description: Day book data }
+
+  # ─── EXAMS ────────────────────────────────────────────────────────────────
+  /exams:
+    get:
+      tags: [Exams]
+      summary: List exams
+      responses:
+        '200': { description: Exam list }
+    post:
+      tags: [Exams]
+      summary: Create exam with schedule
+      responses:
+        '201': { description: Created }
+
+  /exams/{id}/marks/bulk:
+    post:
+      tags: [Exams]
+      summary: Bulk save marks for a subject
+      responses:
+        '201': { description: Marks saved }
+
+  /exams/{id}/marks/lock:
+    post:
+      tags: [Exams]
+      summary: Lock marks and publish results
+      responses:
+        '200': { description: Locked }
+
+  # ─── COMMUNICATION ────────────────────────────────────────────────────────
+  /communication/sms:
+    post:
+      tags: [Communication]
+      summary: Send SMS to recipients (queued)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                recipients:
+                  type: array
+                  items: { type: string }
+                message: { type: string }
+                templateId: { type: string }
+      responses:
+        '201': { description: Queued }
+
+  /communication/email:
+    post:
+      tags: [Communication]
+      summary: Send email to recipients (queued)
+      responses:
+        '201': { description: Queued }
+
+  /communication/push:
+    post:
+      tags: [Communication]
+      summary: Send push notifications via FCM
+      responses:
+        '201': { description: Queued }
+
+  # ─── CERTIFICATES ─────────────────────────────────────────────────────────
+  /certificates/verify/{code}:
+    get:
+      tags: [Certificates]
+      summary: Verify certificate by QR/code (public endpoint)
+      security: []
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Certificate valid }
+        '404': { description: Invalid or revoked certificate }
+
+  /certificates/generate:
+    post:
+      tags: [Certificates]
+      summary: Generate and issue a certificate
+      responses:
+        '201': { description: Certificate issued }
+
+  # ─── LIBRARY ──────────────────────────────────────────────────────────────
+  /library/books:
+    get:
+      tags: [Library]
+      summary: Search and list books
+      responses:
+        '200': { description: Book list }
+    post:
+      tags: [Library]
+      summary: Add a book
+      responses:
+        '201': { description: Book created }
+
+  /library/issues:
+    post:
+      tags: [Library]
+      summary: Issue a book to member
+      responses:
+        '201': { description: Book issued }
+
+  /library/issues/{id}/return:
+    post:
+      tags: [Library]
+      summary: Return a book
+      responses:
+        '200': { description: Book returned }
+
+  # ─── TRANSPORT ────────────────────────────────────────────────────────────
+  /transport/routes:
+    get:
+      tags: [Transport]
+      summary: List transport routes (requires transport feature flag)
+      responses:
+        '200': { description: Routes }
+    post:
+      tags: [Transport]
+      summary: Create route
+      responses:
+        '201': { description: Created }
+
+  /transport/vehicles:
+    get:
+      tags: [Transport]
+      summary: List vehicles
+      responses:
+        '200': { description: Vehicles }
+    post:
+      tags: [Transport]
+      summary: Add vehicle
+      responses:
+        '201': { description: Created }
+
+  # ─── HR ───────────────────────────────────────────────────────────────────
+  /hr/staff:
+    get:
+      tags: [HR]
+      summary: List staff
+      responses:
+        '200': { description: Staff list }
+    post:
+      tags: [HR]
+      summary: Add staff member
+      responses:
+        '201': { description: Created }
+
+  /hr/payroll/runs:
+    get:
+      tags: [HR]
+      summary: List payroll runs
+      responses:
+        '200': { description: Runs }
+    post:
+      tags: [HR]
+      summary: Create payroll run
+      responses:
+        '201': { description: Created }
+
+  /hr/payroll/runs/{id}/process:
+    post:
+      tags: [HR]
+      summary: Process payroll run
+      responses:
+        '200': { description: Processed }
+
+  /hr/payroll/runs/{id}/approve:
+    post:
+      tags: [HR]
+      summary: Approve payroll run
+      responses:
+        '200': { description: Approved }
