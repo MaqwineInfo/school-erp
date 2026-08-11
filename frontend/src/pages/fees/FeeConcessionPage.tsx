@@ -10,7 +10,7 @@ export default function FeeConcessionPage() {
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [selected, setSelected] = useState<Demand | null>(null);
-  const { register, handleSubmit, reset } = useForm();
+  const { register, handleSubmit, reset } = useForm<{ concessionAmount: number; reason: string }>();
 
   const { data, isLoading } = useQuery({
     queryKey: ['fee-demands-concession', search],

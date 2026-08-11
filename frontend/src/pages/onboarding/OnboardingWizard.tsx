@@ -385,7 +385,7 @@ function Step4AdminUser({ tenantId, onNext, onToken }: { tenantId: string; onNex
 
 // ─── Step 5: Fee Setup ────────────────────────────────────────────────────────
 function Step5FeeSetup({ tenantId, onNext }: { tenantId: string; onNext: () => void }) {
-  const { register, handleSubmit } = useForm({ defaultValues: { gstEnabled: false, lateFeeEnabled: true } });
+  const { register, handleSubmit } = useForm<{ gstEnabled: boolean; lateFeeEnabled: boolean; paymentModes: Record<string, boolean> }>({ defaultValues: { gstEnabled: false, lateFeeEnabled: true } });
 
   const mutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => axios.post('/onboarding/fee-setup', { tenantId, ...data }).then(r => r.data),

@@ -16,7 +16,7 @@ export default function InventoryPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const { register, handleSubmit, reset } = useForm();
-  const stockForm = useForm();
+  const stockForm = useForm<{ quantity: number; type: string; reason: string }>();
 
   const params = new URLSearchParams({ page: String(page), ...Object.fromEntries(Object.entries({ category, search }).filter(([, v]) => v)) });
   const { data, isLoading } = useQuery({

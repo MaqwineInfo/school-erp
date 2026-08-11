@@ -162,9 +162,9 @@ export default function StudentsPage() {
           <div className="sm:col-span-2 border-t pt-3 mt-1">
             <p className="font-medium text-sm text-gray-700 mb-3">Parent / Guardian</p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Input label="Parent Name" value={form.guardians?.[0]?.name || ''} onChange={e => setForm(f => ({ ...f, guardians: [{ ...(f.guardians?.[0] || {}), relation: 'father', name: e.target.value }] }))} />
-              <Input label="Phone" value={form.guardians?.[0]?.phone || ''} onChange={e => setForm(f => ({ ...f, guardians: [{ ...(f.guardians?.[0] || {}), relation: 'father', phone: e.target.value }] }))} />
-              <Input label="Email" value={form.guardians?.[0]?.email || ''} onChange={e => setForm(f => ({ ...f, guardians: [{ ...(f.guardians?.[0] || {}), relation: 'father', email: e.target.value }] }))} />
+              <Input label="Parent Name" value={form.guardians?.[0]?.name || ''} onChange={e => setForm(f => ({ ...f, guardians: [{ relation: 'father', ...(f.guardians?.[0] || {}), name: e.target.value }] }))} />
+              <Input label="Phone" value={form.guardians?.[0]?.phone || ''} onChange={e => setForm(f => ({ ...f, guardians: [{ relation: 'father', name: '', ...(f.guardians?.[0] || {}), phone: e.target.value }] }))} />
+              <Input label="Email" value={form.guardians?.[0]?.email || ''} onChange={e => setForm(f => ({ ...f, guardians: [{ relation: 'father', name: '', ...(f.guardians?.[0] || {}), email: e.target.value }] }))} />
             </div>
           </div>
 
