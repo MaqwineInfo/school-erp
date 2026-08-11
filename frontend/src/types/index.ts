@@ -204,6 +204,7 @@ export interface Staff {
   joiningDate?: string;
   phone?: string;
   email?: string;
+  pan?: string;
   isActive: boolean;
 }
 
