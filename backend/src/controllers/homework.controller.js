@@ -2,6 +2,7 @@ const Homework = require('../models/Homework');
 const { AppError } = require('../shared/errors');
 const { sendSuccess, buildPaginationMeta, parsePagination } = require('../shared/response');
 const { applyClassScopeForPortal } = require('../middleware/studentScope');
+const { assertClassSectionExists } = require('../services/academic.service');
 
 exports.list = async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query);
@@ -43,7 +44,11 @@ exports.get = async (req, res) => {
 };
 
 exports.create = async (req, res) => {
-  const hw = await Homework.create({ ...req.body, tenantId: req.tenantId, branchId: req.user?.branchId, teacherId: req.body.teacherId || req.user.userId });
+  const body = { ...req.body };
+  if (!body.standardId || !body.divisionName) throw new AppError('Class and section are required', 400);
+  const { divisionName } = await assertClassSectionExists(req.tenantId, body.standardId, body.divisionName);
+  body.divisionName = divisionName;
+  const hw = await Homework.create({ ...body, tenantId: req.tenantId, branchId: req.user?.branchId, teacherId: body.teacherId || req.user.userId });
   sendSuccess(res, hw, 'Homework created', 201);
 };
 

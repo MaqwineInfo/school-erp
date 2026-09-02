@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from '../../lib/api';
+import { ClassDivisionPicker } from '../../components/academics/ClassDivisionPicker';
+import { useAcademicLabels } from '../../hooks/useAcademicLabels';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -30,32 +32,31 @@ function SlotCell({ slot, onClick }: { slot?: Slot; onClick: () => void }) {
 export default function TimetablePage() {
   const qc = useQueryClient();
   const [standardId, setStandardId] = useState('');
-  const [divisionName, setDivisionName] = useState('A');
+  const [divisionName, setDivisionName] = useState('');
+  const labels = useAcademicLabels();
   const [editSlot, setEditSlot] = useState<{ day: number; period: number } | null>(null);
   const [slotForm, setSlotForm] = useState({ type: 'subject', subjectId: '', teacherId: '', room: '' });
 
-  const { data: standards = [] } = useQuery({
-    queryKey: ['standards'],
-    queryFn: () => axios.get('/academics/standards').then(r => r.data.data),
-  });
-
   const { data: subjects = [] } = useQuery({
     queryKey: ['subjects'],
-    queryFn: () => axios.get('/academics/subjects').then(r => r.data.data),
+    queryFn: () => axios.get('/academics/subjects').then(r => r.data.data as { _id: string; name: string }[]),
   });
 
   const { data: staff = [] } = useQuery({
     queryKey: ['staff-list'],
-    queryFn: () => axios.get('/hr/staff').then(r => r.data.data),
+    queryFn: () => axios.get('/hr/staff').then(r => r.data.data as { _id: string; name: string }[] | { staff: { _id: string; name: string }[] }),
   });
 
   const { data: timetable } = useQuery({
     queryKey: ['timetable', standardId, divisionName],
     queryFn: () => axios.get(`/timetable/class?standardId=${standardId}&divisionName=${divisionName}`).then(r => r.data.data),
-    enabled: !!standardId,
+    enabled: !!standardId && !!divisionName,
   });
 
-  const academicYearId = useQuery({ queryKey: ['academic-year'], queryFn: () => axios.get('/academics/years').then(r => r.data.data?.[0]?._id) }).data;
+  const academicYearId = useQuery({
+    queryKey: ['academic-year'],
+    queryFn: () => axios.get('/academics/years').then(r => r.data.data?.[0]?._id as string | undefined),
+  }).data;
 
   const updateSlot = useMutation({
     mutationFn: (slot: object) => axios.post('/timetable/slot', { standardId, divisionName, academicYearId, slot }),
@@ -64,9 +65,6 @@ export default function TimetablePage() {
 
   const slots: Slot[] = timetable?.slots || [];
   const getSlot = (day: number, period: number) => slots.find(s => s.dayOfWeek === day && s.periodNo === period);
-
-  const selectedStandard = Array.isArray(standards) ? standards.find((s: { _id: string }) => s._id === standardId) : null;
-  const divisions: string[] = selectedStandard?.divisions?.map((d: { name: string }) => d.name) || [];
 
   return (
     <div className="p-6 space-y-5">
@@ -78,22 +76,19 @@ export default function TimetablePage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
-        <select value={standardId} onChange={e => setStandardId(e.target.value)} className="input-field w-48">
-          <option value="">Select Class</option>
-          {(Array.isArray(standards) ? standards : []).map((s: { _id: string; name: string }) => (
-            <option key={s._id} value={s._id}>{s.name}</option>
-          ))}
-        </select>
-        <select value={divisionName} onChange={e => setDivisionName(e.target.value)} className="input-field w-32" disabled={!standardId}>
-          {divisions.map((d: string) => <option key={d} value={d}>Division {d}</option>)}
-        </select>
-      </div>
+      <ClassDivisionPicker
+        standardId={standardId}
+        divisionName={divisionName}
+        onStandardChange={setStandardId}
+        onDivisionChange={setDivisionName}
+        required
+        className="max-w-xl"
+      />
 
-      {!standardId ? (
+      {!standardId || !divisionName ? (
         <div className="card p-12 text-center text-gray-400">
           <div className="text-4xl mb-3">🗓️</div>
-          <p>Select a class and division to view or edit the timetable</p>
+          <p>Select {labels.class.toLowerCase()} and {labels.section.toLowerCase()} to view or edit the timetable</p>
         </div>
       ) : (
         <div className="card overflow-hidden">

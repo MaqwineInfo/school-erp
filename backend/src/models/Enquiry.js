@@ -11,6 +11,7 @@ const enquirySchema = new mongoose.Schema({
   parentEmail: { type: String, lowercase: true },
   currentSchool: { type: String },
   applyingForStandard: { type: mongoose.Schema.Types.ObjectId, ref: 'Standard' },
+  applyingForDivision: { type: String, trim: true },
   applyingForYear: { type: String },
   source: {
     type: String,

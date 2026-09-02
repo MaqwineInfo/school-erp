@@ -4,7 +4,7 @@ import {
   IndianRupee, FileText, Clock, Bus, Home, Library, UserCog,
   Bell, Calendar, Package, Award, Heart, Building2, BarChart3,
   MessageSquare, ShieldCheck, UserPlus, School, Settings, Shield,
-  ScrollText, Stethoscope, Warehouse, DollarSign,
+  ScrollText, Stethoscope, Warehouse, DollarSign, Activity, Server, ToggleLeft,
 } from 'lucide-react';
 
 export type NavAction = 'view' | 'add' | 'edit' | 'delete' | 'approve' | 'export';
@@ -20,6 +20,19 @@ export interface NavItem {
   action?: NavAction;
   superAdminOnly?: boolean;
 }
+
+// ─── Super Admin Platform Console (WF-0020 – WF-0033) ───────────────────────
+
+export const SUPER_ADMIN_PORTAL_NAV: NavItem[] = [
+  { label: 'Platform Dashboard', path: '/super', icon: <LayoutDashboard className="w-4 h-4" /> },
+  { label: 'All Schools', path: '/super/tenants', icon: <Building2 className="w-4 h-4" /> },
+  { label: 'Subscription Plans', path: '/super/plans', icon: <Package className="w-4 h-4" /> },
+  { label: 'School Provisioning', path: '/super/provisioning', icon: <UserPlus className="w-4 h-4" /> },
+  { label: 'Global Analytics', path: '/super/analytics', icon: <BarChart3 className="w-4 h-4" /> },
+  { label: 'System Health', path: '/super/health', icon: <Activity className="w-4 h-4" /> },
+  { label: 'Audit Logs', path: '/audit-logs', icon: <ScrollText className="w-4 h-4" /> },
+  { label: 'Security Center', path: '/super/security', icon: <Shield className="w-4 h-4" /> },
+];
 
 // ─── ClassCare-style portal menus (5–10 items max) ───────────────────────────
 
@@ -192,7 +205,7 @@ export const ADMIN_PORTAL_NAV: NavItem[] = [
     label: 'Academics', icon: <School className="w-4 h-4" />, module: 'academics',
     children: [
       { label: 'Academic Years', path: '/academics/years', icon: <Calendar className="w-4 h-4" />, module: 'academics', action: 'edit' },
-      { label: 'Classes & Divisions', path: '/academics/standards', icon: <Building2 className="w-4 h-4" />, module: 'academics', action: 'edit' },
+      { label: 'Classes & Sections', path: '/academics/standards', icon: <Building2 className="w-4 h-4" />, module: 'academics', action: 'edit' },
       { label: 'Subjects', path: '/academics/subjects', icon: <BookOpen className="w-4 h-4" />, module: 'academics', action: 'edit' },
       { label: 'Timetable', path: '/academics/timetable', icon: <Clock className="w-4 h-4" />, module: 'timetable' },
       { label: 'Syllabus', path: '/academics/syllabus', icon: <BookOpen className="w-4 h-4" />, module: 'study_material' },
@@ -242,8 +255,17 @@ export const ADMIN_PORTAL_NAV: NavItem[] = [
 
   { label: 'Library', path: '/library', icon: <Library className="w-4 h-4" />, module: 'library' },
   { label: 'Transport', path: '/transport', icon: <Bus className="w-4 h-4" />, module: 'transport' },
-  { label: 'Hostel', path: '/hostel', icon: <Home className="w-4 h-4" />, module: 'hostel' },
-  { label: 'Health Records', path: '/health', icon: <Stethoscope className="w-4 h-4" />, module: 'students', action: 'edit' },
+  {
+    label: 'Hostel', icon: <Home className="w-4 h-4" />, module: 'hostel',
+    children: [
+      { label: 'Hostel', path: '/hostel', icon: <Home className="w-4 h-4" />, module: 'hostel' },
+      { label: 'Meal Planner', path: '/hostel/meals', icon: <Calendar className="w-4 h-4" />, module: 'hostel' },
+    ],
+  },
+  { label: 'Discipline', path: '/discipline', icon: <Shield className="w-4 h-4" />, module: 'discipline' },
+  { label: 'Alumni', path: '/alumni', icon: <Users className="w-4 h-4" />, module: 'alumni' },
+  { label: 'Tasks', path: '/tasks', icon: <ClipboardList className="w-4 h-4" />, module: 'tasks' },
+  { label: 'Health Records', path: '/health', icon: <Stethoscope className="w-4 h-4" />, module: 'health' },
   { label: 'Inventory', path: '/inventory', icon: <Warehouse className="w-4 h-4" />, module: 'inventory' },
   { label: 'Expenses', path: '/finance/expenses', icon: <DollarSign className="w-4 h-4" />, module: 'expenses' },
 
@@ -311,11 +333,7 @@ export function getPortalType(role?: string): PortalType {
 export function getNavForRole(role?: string): NavItem[] {
   switch (getPortalType(role)) {
     case 'super_admin':
-      return [
-        { label: 'Dashboard', path: '/', icon: <LayoutDashboard className="w-4 h-4" /> },
-        { label: 'All Schools', path: '/superadmin/tenants', icon: <Building2 className="w-4 h-4" /> },
-        { label: 'Audit Logs', path: '/audit-logs', icon: <ScrollText className="w-4 h-4" />, module: 'audit_logs' },
-      ];
+      return SUPER_ADMIN_PORTAL_NAV;
     case 'parent': return PARENT_PORTAL_NAV;
     case 'student': return STUDENT_PORTAL_NAV;
     case 'teacher': return TEACHER_PORTAL_NAV;

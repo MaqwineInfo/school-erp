@@ -385,10 +385,11 @@ function Step4AdminUser({ tenantId, onNext, onToken }: { tenantId: string; onNex
 
 // ─── Step 5: Fee Setup ────────────────────────────────────────────────────────
 function Step5FeeSetup({ tenantId, onNext }: { tenantId: string; onNext: () => void }) {
-  const { register, handleSubmit } = useForm<{ gstEnabled: boolean; lateFeeEnabled: boolean; paymentModes: Record<string, boolean> }>({ defaultValues: { gstEnabled: false, lateFeeEnabled: true } });
+  const { register, handleSubmit } = useForm({ defaultValues: { gstEnabled: false, lateFeeEnabled: true } });
+  const [paymentModes, setPaymentModes] = useState<Record<string, boolean>>({});
 
   const mutation = useMutation({
-    mutationFn: (data: Record<string, unknown>) => axios.post('/onboarding/fee-setup', { tenantId, ...data }).then(r => r.data),
+    mutationFn: (data: Record<string, unknown>) => axios.post('/onboarding/fee-setup', { tenantId, ...data, paymentModes }).then(r => r.data),
     onSuccess: onNext,
   });
 
@@ -422,7 +423,12 @@ function Step5FeeSetup({ tenantId, onNext }: { tenantId: string; onNext: () => v
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[['cash', '💵 Cash'], ['cheque', '🏦 Cheque'], ['neft_rtgs', '🔄 NEFT/RTGS'], ['upi', '📱 UPI'], ['dd', '📜 DD'], ['pos', '💳 POS/Card'], ['online', '🌐 Online Portal'], ['razorpay', '⚡ Razorpay']].map(([v, l]) => (
             <label key={v} className="flex items-center gap-2 cursor-pointer border rounded-lg p-2">
-              <input type="checkbox" {...register(`paymentModes.${v}`)} className="rounded" />
+              <input
+                type="checkbox"
+                checked={!!paymentModes[v]}
+                onChange={(e) => setPaymentModes((prev) => ({ ...prev, [v]: e.target.checked }))}
+                className="rounded"
+              />
               <span className="text-sm">{l}</span>
             </label>
           ))}

@@ -115,11 +115,19 @@ export const useAuthStore = create<AuthState>()(
         return !!permissionMap[module]?.canView;
       },
 
+      /**
+       * Is this module part of the tenant's plan?
+       *
+       * FAIL CLOSED. The previous implementation returned `true` when `enabledModules`
+       * was empty, so a tenant whose plan had not loaded — or was misconfigured — saw
+       * every module in the sidebar and every route open, with the API then rejecting
+       * each request. The backend gate (`requireModule`) fails closed; this now matches it.
+       */
       hasModule: (module) => {
         const { user, enabledModules } = get();
         if (!user) return false;
         if ((user as any).isSuperAdmin || user.role === 'super_admin') return true;
-        if (enabledModules.length === 0) return true;
+        if (!enabledModules || enabledModules.length === 0) return false;
         const aliases = TENANT_MODULE_ALIASES[module] || [module];
         return aliases.some(a => enabledModules.includes(a));
       },

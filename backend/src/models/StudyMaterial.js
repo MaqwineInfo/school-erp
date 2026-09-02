@@ -8,6 +8,9 @@ const studyMaterialSchema = new mongoose.Schema({
   type: { type: String, enum: ['notes', 'question_bank', 'sample_paper', 'reference', 'video_link', 'other'], default: 'notes' },
   standardId: { type: mongoose.Schema.Types.ObjectId, ref: 'Standard', required: true },
   divisionName: { type: String },
+  /** Phase 3 (ADR-03): the stable academic-group reference. The legacy standardId +
+   * divisionName pair is retained during the dual-write window and dropped afterwards. */
+  academicGroupId: { type: mongoose.Schema.Types.ObjectId, ref: 'AcademicGroup', index: true },
   subjectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Subject' },
   academicYearId: { type: mongoose.Schema.Types.ObjectId, ref: 'AcademicYear' },
   uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

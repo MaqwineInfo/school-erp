@@ -5,6 +5,10 @@ const Subject = require('../models/Subject');
 const Standard = require('../models/Standard');
 const { AppError } = require('../shared/errors');
 const { sendSuccess } = require('../shared/response');
+const {
+  assertClassSectionExists,
+  normalizeDivisionName,
+} = require('../services/academic.service');
 const { applyStudentScope, assertStudentAccess } = require('../middleware/studentScope');
 
 // CBSE grade mapping
@@ -51,8 +55,25 @@ exports.list = async (req, res) => {
 
 // Bulk save marks for an exam + class + subject
 exports.bulkSave = async (req, res) => {
-  const { examId, subjectId, entries } = req.body;
+  const { examId, subjectId, entries, standardId, divisionName } = req.body;
   if (!examId || !subjectId || !Array.isArray(entries)) throw new AppError('examId, subjectId and entries required', 400);
+  if (!standardId || !divisionName) throw new AppError('Class and section are required for marks entry', 400);
+
+  const normalized = normalizeDivisionName(divisionName);
+  await assertClassSectionExists(req.tenantId, standardId, normalized);
+
+  const studentIds = entries.map((e) => e.studentId).filter(Boolean);
+  const inClass = await Student.countDocuments({
+    _id: { $in: studentIds },
+    tenantId: req.tenantId,
+    standardId,
+    divisionName: normalized,
+    deletedAt: null,
+    status: 'active',
+  });
+  if (inClass !== studentIds.length) {
+    throw new AppError('All students must belong to the selected class and section', 400);
+  }
 
   const results = [];
   for (const entry of entries) {
@@ -113,8 +134,16 @@ exports.reportCard = async (req, res) => {
 exports.classSummary = async (req, res) => {
   const { examId, standardId, divisionName } = req.query;
   if (!examId || !standardId) throw new AppError('examId and standardId required', 400);
+  const normalized = divisionName ? normalizeDivisionName(divisionName) : undefined;
+  if (normalized) await assertClassSectionExists(req.tenantId, standardId, normalized);
 
-  const students = await Student.find({ tenantId: req.tenantId, standardId, divisionName: divisionName || undefined }).sort({ rollNo: 1 });
+  const students = await Student.find({
+    tenantId: req.tenantId,
+    standardId,
+    divisionName: normalized || undefined,
+    deletedAt: null,
+    status: 'active',
+  }).sort({ rollNo: 1 });
   const entries = await MarksEntry.find({ tenantId: req.tenantId, examId, studentId: { $in: students.map(s => s._id) } }).populate('subjectId', 'name code');
 
   const summary = students.map(student => {

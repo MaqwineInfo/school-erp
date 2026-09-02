@@ -1,14 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { Menu, Bell, Search, LogOut, ChevronDown } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { useAuthStore } from '../../stores/auth.store';
+import { authService } from '../../services/auth.service';
 
 export const DashboardLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const { user, logout } = useAuthStore();
+  const { user, logout, updateUser, setEnabledModules } = useAuthStore();
   const navigate = useNavigate();
+
+  const { data: meData } = useQuery({
+    queryKey: ['auth-me'],
+    queryFn: authService.me,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  useEffect(() => {
+    if (!meData?.data) return;
+    const me = meData.data as {
+      isSuperAdmin?: boolean;
+      role?: string;
+      enabledModules?: string[];
+      tenant?: { slug?: string; name?: string; _id?: string };
+      tenantId?: { slug?: string; name?: string; _id?: string };
+    };
+    updateUser({
+      isSuperAdmin: !!me.isSuperAdmin,
+      role: (me.role || user?.role) as never,
+    });
+    if (me.enabledModules?.length) setEnabledModules(me.enabledModules);
+  }, [meData, updateUser, setEnabledModules, user?.role, user?.tenantId]);
 
   const handleLogout = () => {
     logout();

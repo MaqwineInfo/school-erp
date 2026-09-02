@@ -9,9 +9,10 @@ const standardSchema = new mongoose.Schema({
   stage: { type: String, enum: ['pre_primary','primary','middle','secondary','senior_secondary'], default: 'primary' },
   streams: [{ type: String, enum: ['science','commerce','arts','vocational'] }],
   divisions: [{
-    name: { type: String, required: true }, // A, B, C
+    name: { type: String, required: true }, // A, B, C — UI label: Section
     classTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     strength: { type: Number, default: 0 },
+    maxCapacity: { type: Number, default: 40 },
   }],
   isActive: { type: Boolean, default: true },
   deletedAt: { type: Date, default: null },

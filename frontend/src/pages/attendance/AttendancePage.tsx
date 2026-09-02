@@ -4,7 +4,9 @@ import { Check, X, Clock, AlertCircle, Save } from 'lucide-react';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
-import { attendanceService, academicService } from '../../services';
+import { ClassDivisionPicker, useStandards } from '../../components/academics/ClassDivisionPicker';
+import { formatClassSection, LABELS } from '../../constants/systemFlow';
+import { attendanceService } from '../../services';
 
 type AttendanceStatus = 'present' | 'absent' | 'late' | 'leave';
 
@@ -32,9 +34,11 @@ export default function AttendancePage() {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [saved, setSaved] = useState(false);
 
-  const { data: standards } = useQuery({ queryKey: ['standards'], queryFn: academicService.listStandards });
-
-  const selectedStandard = standards?.data?.find(s => s._id === standardId);
+  const { data: standardsRes } = useStandards();
+  const selectedStandard = standardsRes?.data?.find(s => s._id === standardId);
+  const classSectionLabel = selectedStandard && divisionName
+    ? formatClassSection(selectedStandard, divisionName)
+    : null;
 
   const { data: attendanceData, isLoading } = useQuery({
     queryKey: ['attendance', date, standardId, divisionName],
@@ -85,28 +89,19 @@ export default function AttendancePage() {
         {/* Filters */}
         <div className="lg:col-span-1">
           <Card>
-            <h3 className="font-semibold text-gray-900 mb-4">Select Class</h3>
+            <h3 className="font-semibold text-gray-900 mb-4">Select {LABELS.class}</h3>
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
                 <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Standard</label>
-                <select value={standardId} onChange={e => setStandardId(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="">Select Standard</option>
-                  {standards?.data?.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
-                </select>
-              </div>
-              {selectedStandard && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Division</label>
-                  <select value={divisionName} onChange={e => setDivisionName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="">Select Division</option>
-                    {selectedStandard.divisions.map(d => <option key={d.name} value={d.name}>{d.name}</option>)}
-                  </select>
-                </div>
-              )}
+              <ClassDivisionPicker
+                standardId={standardId}
+                divisionName={divisionName}
+                onStandardChange={setStandardId}
+                onDivisionChange={setDivisionName}
+                required
+              />
             </div>
           </Card>
 
@@ -139,7 +134,7 @@ export default function AttendancePage() {
           {!standardId || !divisionName ? (
             <Card className="text-center py-16">
               <AlertCircle className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-400">Select a standard and division to mark attendance</p>
+              <p className="text-gray-400">Select {LABELS.class.toLowerCase()} and {LABELS.section.toLowerCase()} to mark attendance</p>
             </Card>
           ) : isLoading ? (
             <Card><div className="h-40 flex items-center justify-center text-gray-400">Loading students...</div></Card>
@@ -151,7 +146,7 @@ export default function AttendancePage() {
             <Card padding="none">
               <div className="flex items-center justify-between p-4 border-b border-gray-200">
                 <div>
-                  <h3 className="font-semibold text-gray-900">{selectedStandard?.name} - {divisionName}</h3>
+                  <h3 className="font-semibold text-gray-900">{classSectionLabel || `${LABELS.class} · ${LABELS.section}`}</h3>
                   <p className="text-xs text-gray-400">{new Date(date).toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
                 </div>
                 <div className="flex items-center gap-2">

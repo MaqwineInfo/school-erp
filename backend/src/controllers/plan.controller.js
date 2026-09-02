@@ -1,11 +1,18 @@
 const Plan = require('../models/Plan');
 const Tenant = require('../models/Tenant');
+const Student = require('../models/Student');
 const { AppError } = require('../shared/errors');
 const { sendSuccess } = require('../shared/response');
 
 // List all plans (public — for signup page)
 exports.listPublic = async (req, res) => {
   const plans = await Plan.find({ isActive: true }).sort({ sortOrder: 1 });
+  sendSuccess(res, plans);
+};
+
+// Super admin: list all plans including inactive
+exports.listAll = async (req, res) => {
+  const plans = await Plan.find({}).sort({ sortOrder: 1 });
   sendSuccess(res, plans);
 };
 
@@ -36,10 +43,25 @@ exports.listTenants = async (req, res) => {
 
   const skip = (page - 1) * limit;
   const [tenants, total] = await Promise.all([
-    Tenant.find(filter).populate('planId', 'displayName').sort({ createdAt: -1 }).skip(skip).limit(+limit),
+    Tenant.find(filter).populate('planId', 'displayName').sort({ createdAt: -1 }).skip(skip).limit(+limit).lean(),
     Tenant.countDocuments(filter),
   ]);
-  sendSuccess(res, tenants, null, 200, { total, page: +page, limit: +limit, totalPages: Math.ceil(total / limit) });
+
+  const tenantIds = tenants.map((t) => t._id);
+  const studentCounts = tenantIds.length
+    ? await Student.aggregate([
+        { $match: { tenantId: { $in: tenantIds }, deletedAt: null, status: 'active' } },
+        { $group: { _id: '$tenantId', count: { $sum: 1 } } },
+      ])
+    : [];
+  const countMap = Object.fromEntries(studentCounts.map((c) => [String(c._id), c.count]));
+
+  const enriched = tenants.map((t) => ({
+    ...t,
+    studentCount: countMap[String(t._id)] || 0,
+  }));
+
+  sendSuccess(res, enriched, null, 200, { total, page: +page, limit: +limit, totalPages: Math.ceil(total / limit) });
 };
 
 // Super admin: get single tenant details
@@ -58,6 +80,20 @@ exports.updateTenant = async (req, res) => {
   const tenant = await Tenant.findByIdAndUpdate(req.params.id, { $set: update }, { new: true });
   if (!tenant) throw new AppError('Tenant not found', 404);
   sendSuccess(res, tenant, 'Tenant updated');
+};
+
+// Super admin: toggle modules for a tenant (Plan §8 step 4)
+exports.updateTenantModules = async (req, res) => {
+  const { enabledModules } = req.body;
+  if (!Array.isArray(enabledModules)) throw new AppError('enabledModules array required', 400);
+
+  const tenant = await Tenant.findByIdAndUpdate(
+    req.params.id,
+    { $set: { enabledModules } },
+    { new: true }
+  );
+  if (!tenant) throw new AppError('Tenant not found', 404);
+  sendSuccess(res, tenant, 'Modules updated');
 };
 
 // Super admin: suspend / reactivate tenant

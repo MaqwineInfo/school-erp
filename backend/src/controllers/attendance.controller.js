@@ -3,11 +3,13 @@ const Student = require('../models/Student');
 const { AppError } = require('../shared/errors');
 const { sendSuccess } = require('../shared/response');
 const { assertStudentAccess } = require('../middleware/studentScope');
+const { assertClassSectionExists, normalizeDivisionName } = require('../services/academic.service');
 
 exports.mark = async (req, res) => {
   const { standardId, divisionName, date, records, academicYearId, isPeriodWise, periodNo, subjectId } = req.body;
+  const { divisionName: normalized } = await assertClassSectionExists(req.tenantId, standardId, divisionName);
 
-  const filter = { tenantId: req.tenantId, standardId, divisionName, date: new Date(date) };
+  const filter = { tenantId: req.tenantId, standardId, divisionName: normalized, date: new Date(date) };
   if (isPeriodWise && periodNo) filter.periodNo = periodNo;
 
   const existing = await Attendance.findOne(filter);
@@ -24,7 +26,7 @@ exports.mark = async (req, res) => {
     branchId: req.user.branchId,
     academicYearId,
     standardId,
-    divisionName,
+    divisionName: normalized,
     date: new Date(date),
     isPeriodWise: !!isPeriodWise,
     periodNo,
@@ -39,12 +41,13 @@ exports.mark = async (req, res) => {
 
 exports.getByDate = async (req, res) => {
   const { standardId, divisionName, date, periodNo } = req.query;
-  const filter = { tenantId: req.tenantId, standardId, divisionName, date: new Date(date) };
+  const normalized = normalizeDivisionName(divisionName);
+  const filter = { tenantId: req.tenantId, standardId, divisionName: normalized, date: new Date(date) };
   if (periodNo) filter.periodNo = +periodNo;
 
   const attendance = await Attendance.findOne(filter).populate('records.studentId', 'name admissionNo rollNo');
   if (!attendance) {
-    const students = await Student.find({ tenantId: req.tenantId, standardId, divisionName, status: 'active', deletedAt: null }).select('_id name admissionNo rollNo');
+    const students = await Student.find({ tenantId: req.tenantId, standardId, divisionName: normalized, status: 'active', deletedAt: null }).select('_id name admissionNo rollNo');
     return sendSuccess(res, { attendance: null, students });
   }
   sendSuccess(res, { attendance, students: [] });
@@ -74,7 +77,8 @@ exports.monthly = async (req, res) => {
 
 exports.summary = async (req, res) => {
   const { standardId, divisionName, academicYearId } = req.query;
-  const filter = { tenantId: req.tenantId, standardId, divisionName };
+  const normalized = normalizeDivisionName(divisionName);
+  const filter = { tenantId: req.tenantId, standardId, divisionName: normalized };
   if (academicYearId) filter.academicYearId = academicYearId;
 
   const docs = await Attendance.find(filter).select('date records');

@@ -2,14 +2,16 @@ const Timetable = require('../models/Timetable');
 const Standard = require('../models/Standard');
 const { AppError } = require('../shared/errors');
 const { sendSuccess } = require('../shared/response');
+const { assertClassSectionExists, normalizeDivisionName } = require('../services/academic.service');
 
 // Get timetable for a class/division
 exports.get = async (req, res) => {
   const { standardId, divisionName, academicYearId } = req.query;
-  if (!standardId || !divisionName) throw new AppError('standardId and divisionName required', 400);
+  if (!standardId || !divisionName) throw new AppError('Class and section are required', 400);
+  const normalized = normalizeDivisionName(divisionName);
 
   const tt = await Timetable.findOne({
-    tenantId: req.tenantId, standardId, divisionName,
+    tenantId: req.tenantId, standardId, divisionName: normalized,
     academicYearId: academicYearId || undefined,
     deletedAt: null,
   })
@@ -42,10 +44,11 @@ exports.getTeacher = async (req, res) => {
 // Save / overwrite full timetable for a class
 exports.save = async (req, res) => {
   const { standardId, divisionName, academicYearId, slots } = req.body;
-  if (!standardId || !divisionName) throw new AppError('standardId and divisionName required', 400);
+  if (!standardId || !divisionName) throw new AppError('Class and section are required', 400);
+  const { divisionName: normalized } = await assertClassSectionExists(req.tenantId, standardId, divisionName);
 
   const tt = await Timetable.findOneAndUpdate(
-    { tenantId: req.tenantId, standardId, divisionName, academicYearId },
+    { tenantId: req.tenantId, standardId, divisionName: normalized, academicYearId },
     { $set: { slots: slots || [], isActive: true } },
     { upsert: true, new: true }
   );
@@ -55,10 +58,11 @@ exports.save = async (req, res) => {
 // Add / update a single slot
 exports.updateSlot = async (req, res) => {
   const { standardId, divisionName, academicYearId, slot } = req.body;
+  const { divisionName: normalized } = await assertClassSectionExists(req.tenantId, standardId, divisionName);
 
-  let tt = await Timetable.findOne({ tenantId: req.tenantId, standardId, divisionName, academicYearId });
+  let tt = await Timetable.findOne({ tenantId: req.tenantId, standardId, divisionName: normalized, academicYearId });
   if (!tt) {
-    tt = new Timetable({ tenantId: req.tenantId, standardId, divisionName, academicYearId, slots: [] });
+    tt = new Timetable({ tenantId: req.tenantId, standardId, divisionName: normalized, academicYearId, slots: [] });
   }
 
   // Remove existing slot for same day+period, then add new one

@@ -1,5 +1,11 @@
 # Fee Collection Workflow
 
+> **Status: CURRENT (Phase 6).** Implemented in `backend/src/modules/fees`. Idempotency keys,
+> transactional collection, atomic receipt numbers, the append-only ledger and cheque-bounce
+> reversal all exist and are covered by `backend/tests/fees.test.js`.
+> Not yet built: the Razorpay webhook ROUTE (the driver and HMAC verification exist in
+> `adapters/payment/razorpay.js`), and GSTR-1/3B extraction.
+
 ## Flow Diagram
 
 ```mermaid

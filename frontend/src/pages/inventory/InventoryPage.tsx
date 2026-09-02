@@ -166,7 +166,12 @@ export default function InventoryPage() {
       {/* Adjust Stock Modal */}
       {stockModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <form onSubmit={stockForm.handleSubmit(d => adjustStock.mutate({ id: stockModal._id, ...d }))} className="bg-white rounded-2xl p-6 w-full max-w-sm space-y-4">
+          <form onSubmit={stockForm.handleSubmit((d) => adjustStock.mutate({
+            id: stockModal._id,
+            quantity: Number(d.quantity),
+            type: String(d.type || 'add'),
+            reason: String(d.reason || ''),
+          }))} className="bg-white rounded-2xl p-6 w-full max-w-sm space-y-4">
             <h2 className="text-lg font-bold">Adjust Stock: {stockModal.name}</h2>
             <div className="text-sm text-gray-500">Current: {stockModal.availableQuantity} {stockModal.unit} available</div>
             <div>

@@ -45,7 +45,7 @@ function StudentStrengthReport() {
           <div className="card overflow-hidden">
             <div className="px-4 py-3 border-b font-semibold text-sm">Class-wise Strength</div>
             <table className="w-full text-sm">
-              <thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left">Class</th><th className="px-4 py-2 text-left">Division</th><th className="px-4 py-2 text-center">Boys</th><th className="px-4 py-2 text-center">Girls</th><th className="px-4 py-2 text-center">Total</th></tr></thead>
+              <thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left">Class</th><th className="px-4 py-2 text-left">Section</th><th className="px-4 py-2 text-center">Boys</th><th className="px-4 py-2 text-center">Girls</th><th className="px-4 py-2 text-center">Total</th></tr></thead>
               <tbody>
                 {(data.byClass || []).map((r: { _id: { standardId?: string; divisionName?: string }; count: number; male: number; female: number }, i: number) => (
                   <tr key={i} className="border-t"><td className="px-4 py-2">{r._id.standardId}</td><td className="px-4 py-2">{r._id.divisionName}</td><td className="px-4 py-2 text-center">{r.male}</td><td className="px-4 py-2 text-center">{r.female}</td><td className="px-4 py-2 text-center font-semibold">{r.count}</td></tr>

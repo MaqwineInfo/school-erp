@@ -97,9 +97,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobile, onClose }) => {
   const { user, logout } = useAuthStore();
   const navItems = getNavForRole(user?.role);
 
-  const tenantName = typeof user?.tenantId === 'object' && user?.tenantId !== null
-    ? (user.tenantId as { name: string }).name
-    : 'School ERP';
+  const tenantName = user?.role === 'super_admin' || user?.isSuperAdmin
+    ? 'Platform Console'
+    : typeof user?.tenantId === 'object' && user?.tenantId !== null
+      ? (user.tenantId as { name: string }).name
+      : 'School ERP';
 
   const roleLabel = user?.role?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || '';
 

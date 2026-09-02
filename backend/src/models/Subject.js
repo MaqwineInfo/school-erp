@@ -9,6 +9,7 @@ const subjectSchema = new mongoose.Schema({
   maxMarks: { type: Number, default: 100 },
   passMarks: { type: Number, default: 35 },
   periodsPerWeek: { type: Number, default: 5 },
+  standardIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Standard' }], // classes this subject applies to
   isActive: { type: Boolean, default: true },
   deletedAt: { type: Date, default: null },
 }, { timestamps: true });

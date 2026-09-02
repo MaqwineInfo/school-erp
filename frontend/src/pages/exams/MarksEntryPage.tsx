@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from '../../lib/api';
+import { ClassDivisionPicker } from '../../components/academics/ClassDivisionPicker';
 
 type Student = { _id: string; name: string; admissionNo: string; rollNo?: string };
 type Entry = { studentId: string; marksObtained: number | ''; maxMarks: number; isAbsent: boolean; remarks: string };
@@ -9,13 +10,12 @@ export default function MarksEntryPage() {
   const qc = useQueryClient();
   const [examId, setExamId] = useState('');
   const [standardId, setStandardId] = useState('');
-  const [divisionName, setDivisionName] = useState('A');
+  const [divisionName, setDivisionName] = useState('');
   const [subjectId, setSubjectId] = useState('');
   const [entries, setEntries] = useState<Record<string, Entry>>({});
   const [saved, setSaved] = useState(false);
 
   const { data: exams = [] } = useQuery({ queryKey: ['exams'], queryFn: () => axios.get('/exams').then(r => r.data.data) });
-  const { data: standards = [] } = useQuery({ queryKey: ['standards'], queryFn: () => axios.get('/academics/standards').then(r => r.data.data) });
   const { data: subjects = [] } = useQuery({ queryKey: ['subjects'], queryFn: () => axios.get('/academics/subjects').then(r => r.data.data) });
 
   const selectedExam = (Array.isArray(exams) ? exams : []).find((e: { _id: string }) => e._id === examId);
@@ -26,7 +26,7 @@ export default function MarksEntryPage() {
       const d = r.data.data;
       return Array.isArray(d) ? d : d?.students || [];
     }),
-    enabled: !!standardId,
+    enabled: !!standardId && !!divisionName,
   });
 
   // Load existing marks
@@ -50,7 +50,7 @@ export default function MarksEntryPage() {
 
   const bulkSave = useMutation({
     mutationFn: () => axios.post('/marks/bulk', {
-      examId, subjectId,
+      examId, subjectId, standardId, divisionName,
       entries: (students as Student[]).map(s => entries[s._id] || { studentId: s._id, marksObtained: null, maxMarks: selectedExam?.maxMarks || 100, isAbsent: false, remarks: '' }),
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['marks'] }); setSaved(true); setTimeout(() => setSaved(false), 3000); },
@@ -78,7 +78,7 @@ export default function MarksEntryPage() {
 
       {/* Selectors */}
       <div className="card p-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Exam *</label>
             <select value={examId} onChange={e => setExamId(e.target.value)} className="input-field">
@@ -86,16 +86,14 @@ export default function MarksEntryPage() {
               {(Array.isArray(exams) ? exams : []).map((e: { _id: string; name: string }) => <option key={e._id} value={e._id}>{e.name}</option>)}
             </select>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Class *</label>
-            <select value={standardId} onChange={e => { setStandardId(e.target.value); setEntries({}); }} className="input-field">
-              <option value="">Select Class</option>
-              {(Array.isArray(standards) ? standards : []).map((s: { _id: string; name: string }) => <option key={s._id} value={s._id}>{s.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Division</label>
-            <input value={divisionName} onChange={e => setDivisionName(e.target.value)} placeholder="A" className="input-field" />
+          <div className="md:col-span-2">
+            <ClassDivisionPicker
+              standardId={standardId}
+              divisionName={divisionName}
+              onStandardChange={(id) => { setStandardId(id); setEntries({}); }}
+              onDivisionChange={(name) => { setDivisionName(name); setEntries({}); }}
+              required
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Subject *</label>
@@ -115,7 +113,7 @@ export default function MarksEntryPage() {
       </div>
 
       {/* Marks Table */}
-      {examId && standardId && subjectId ? (
+      {examId && standardId && divisionName && subjectId ? (
         loadingStudents ? (
           <div className="flex justify-center py-10"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>
         ) : (

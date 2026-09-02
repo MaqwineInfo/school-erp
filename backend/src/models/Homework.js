@@ -5,6 +5,9 @@ const homeworkSchema = new mongoose.Schema({
   branchId: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch' },
   standardId: { type: mongoose.Schema.Types.ObjectId, ref: 'Standard', required: true },
   divisionName: { type: String, required: true },
+  /** Phase 3 (ADR-03): the stable academic-group reference. The legacy standardId +
+   * divisionName pair is retained during the dual-write window and dropped afterwards. */
+  academicGroupId: { type: mongoose.Schema.Types.ObjectId, ref: 'AcademicGroup', index: true },
   subjectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Subject', required: true },
   teacherId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   type: { type: String, enum: ['classwork','homework','assignment','project'], default: 'homework' },

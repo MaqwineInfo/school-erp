@@ -1,162 +1,177 @@
 /**
- * RBAC Middleware — Full backend permission enforcement
- * Source: RBAC_Permission_Architecture_Plan.md — Section 3
+ * Legacy RBAC middleware — bridged to the platform permission model.
  *
- * Usage on routes:
- *   router.get('/', authenticate, checkPermission('fees', 'view'), ctrl.list);
- *   router.post('/', authenticate, checkPermission('fees', 'add'), ctrl.create);
- *   router.put('/:id', authenticate, checkPermission('fees', 'edit'), ctrl.update);
- *   router.delete('/:id', authenticate, checkPermission('fees', 'delete'), ctrl.remove);
- *   router.patch('/:id/approve', authenticate, checkPermission('fees', 'approve'), ctrl.approve);
- *   router.get('/export', authenticate, checkPermission('fees', 'export'), ctrl.export);
+ * WHY THIS EXISTS IN THIS FORM
+ * The legacy routers call `checkPermission(module, action)` from here. The original
+ * implementation read the `Permission` collection (role-string × module). ADR-05 made the
+ * `Role` collection the single source and `seed-rbac.js` no longer writes `Permission`
+ * rows — so after the RBAC migration this middleware found nothing and returned
+ * "no permissions found for role X" on EVERY legacy route.
+ *
+ * It now resolves through `platform/rbac/permissionResolver` exactly like the new
+ * `guard()` does, and falls back to the legacy collection only for a principal that has
+ * no role bindings yet (a database migrated half-way).
+ *
+ * What it still does NOT do is apply data scoping — legacy controllers build their own
+ * `{ tenantId }` filters. That is the whole point of porting a module: `req.scope` is
+ * attached here, but only a repository call actually enforces it.
  */
 const Permission = require('../models/Permission');
-const AuditLog = require('../models/AuditLog');
-const { AppError } = require('../shared/errors');
+const { resolve } = require('../platform/rbac/permissionResolver');
+const { requireModule } = require('../platform/rbac/checkPermission');
+const { ACTION_FIELD } = require('../platform/rbac/actions');
+const { resolveScope } = require('../platform/scope/scopeEngine');
+const { createAssignmentProvider } = require('../platform/scope/assignmentProvider');
+const { record } = require('../platform/audit/auditLogger');
+const { UnauthorizedError, ForbiddenError, BadRequestError } = require('../shared/errors');
 
-// Simple in-memory cache: key = `${role}:${module}`, ttl = 5 minutes
-const permCache = new Map();
+/** Transitional fallback for principals with no role bindings. */
+const legacyCache = new Map();
 const CACHE_TTL = 5 * 60 * 1000;
 
-async function getPermission(role, module) {
+async function legacyPermission(role, module) {
   const key = `${role}:${module}`;
-  const cached = permCache.get(key);
+  const cached = legacyCache.get(key);
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data;
 
   const perm = await Permission.findOne({ role, module }).lean();
-  permCache.set(key, { data: perm, ts: Date.now() });
+  legacyCache.set(key, { data: perm, ts: Date.now() });
   return perm;
 }
 
-// Clear cache when permissions are updated (call this after seeding or editing)
-function clearPermissionCache() { permCache.clear(); }
+function clearPermissionCache() {
+  legacyCache.clear();
+}
 
 /**
  * checkPermission(module, action)
- * Middleware factory — checks if user's role has the requested action on the module.
- * Also attaches req.rbacScope with branchScope, dataScope, studentScope for controllers to use.
+ * Attaches `req.permission` and `req.scope` on success, matching the new `guard()`.
+ *
+ * It ALSO performs the module (plan) check. In the new layer that is a separate
+ * `requireModule` middleware composed by `guard()`, but legacy routes only ever call
+ * `checkPermission` — so without this, a tenant whose plan excludes Library still got a
+ * 200 from `/library/books`. Folding the check in here gives every legacy route plan
+ * gating for free, and returns MODULE_DISABLED rather than FORBIDDEN so the UI can tell
+ * "not purchased" from "not permitted" (wireframe WF-0281).
  */
 function checkPermission(module, action) {
+  const moduleGate = requireModule(module);
+
   return async (req, res, next) => {
     try {
-      const user = req.user;
-      if (!user) return next(new AppError('Not authenticated', 401));
+      const principal = req.principal;
+      if (!principal) return next(new UnauthorizedError('Authentication required'));
 
-      // super_admin bypasses all module-level checks
-      if (user.role === 'super_admin') {
+      const field = ACTION_FIELD[action];
+      if (!field) return next(new BadRequestError(`Unknown action: ${action}`));
+
+      // Plan gating first, so a disabled module never leaks a permission decision.
+      const gateError = await new Promise((resolve_) => moduleGate(req, res, resolve_));
+      if (gateError) return next(gateError);
+
+      if (principal.isSuperAdmin) {
+        req.permission = {
+          canView: true, canAdd: true, canEdit: true,
+          canDelete: true, canApprove: true, canExport: true,
+          branchScope: 'all_branches', dataScope: 'group',
+          studentScope: 'all', temporalScope: 'all_years',
+        };
         req.rbacScope = { branchScope: 'all_branches', dataScope: 'group', studentScope: 'all' };
         return next();
       }
 
-      const perm = await getPermission(user.role, module);
+      let permission = resolve(principal, module);
 
-      if (!perm) {
-        return next(new AppError(`Access denied: no permissions found for role "${user.role}" on module "${module}"`, 403));
+      // Half-migrated database: no bindings, so consult the old collection.
+      if (!principal.roles?.length) {
+        const legacy = await legacyPermission(principal.role, module);
+        if (legacy) permission = legacy;
       }
 
-      // Map action string to Permission field
-      const actionMap = {
-        view: 'canView', add: 'canAdd', edit: 'canEdit', delete: 'canDelete',
-        approve: 'canApprove', export: 'canExport',
-      };
-      const field = actionMap[action];
-      if (!field) return next(new AppError(`Unknown action: ${action}`, 400));
-
-      if (!perm[field]) {
-        return next(new AppError(
-          `Access denied: role "${user.role}" cannot perform "${action}" on module "${module}"`,
-          403
-        ));
+      if (!permission?.[field]) {
+        return next(
+          new ForbiddenError(
+            `You do not have permission to ${action} ${module.replace(/_/g, ' ')}`,
+          ),
+        );
       }
 
-      // Attach scope to req for controllers to apply data filtering
+      const provider = req.assignmentProvider || createAssignmentProvider();
+      req.assignmentProvider = provider;
+
+      req.permission = permission;
+      req.scope = await resolveScope(principal, permission, { module, action, provider });
+
+      // Legacy shape, still read by some controllers.
       req.rbacScope = {
-        branchScope: perm.branchScope,
-        dataScope: perm.dataScope,
-        studentScope: perm.studentScope,
+        branchScope: permission.branchScope,
+        dataScope: permission.dataScope,
+        studentScope: permission.studentScope,
       };
 
-      next();
+      return next();
     } catch (err) {
-      next(err);
+      return next(err);
     }
   };
 }
 
 /**
- * applyBranchScope — Middleware that attaches branchFilter to req
- * Controllers should use req.branchFilter when querying MongoDB.
+ * applyBranchScope — legacy `req.branchFilter`.
  *
- * For own_branch roles: { tenantId, branchId }
- * For all_branches roles (super_admin, trustee): { tenantId } only
+ * The previous version decided all-branch access with `['trustee'].includes(user.role)`,
+ * a role string that existed in no enum, so the branch was ALWAYS pinned for everyone
+ * except super admins. It is now derived from the principal's actual permissions.
  */
 function applyBranchScope(req, res, next) {
-  const user = req.user;
-  if (!user) return next();
+  const principal = req.principal;
+  if (!principal) return next();
 
-  const isAllBranches = ['super_admin'].includes(user.role);
+  const grantsAllBranches =
+    principal.isSuperAdmin ||
+    (principal.roles ?? []).some((r) =>
+      Object.values(r.permissions ?? {}).some((p) => p.branchScope === 'all_branches'),
+    );
 
-  if (isAllBranches) {
-    req.branchFilter = { tenantId: user.tenantId };
-  } else {
-    req.branchFilter = {
-      tenantId: user.tenantId,
-      ...(user.branchId ? { branchId: user.branchId } : {}),
-    };
-  }
+  req.branchFilter = grantsAllBranches
+    ? { tenantId: principal.tenantId }
+    : {
+        tenantId: principal.tenantId,
+        ...(principal.branchId ? { branchId: principal.branchId } : {}),
+      };
 
-  next();
+  return next();
 }
 
 /**
- * audit(module, action) — Middleware to log sensitive actions to AuditLog.
- * Attach AFTER the actual controller logic using res.on('finish').
- *
- * Usage: router.post('/', authenticate, checkPermission('fees','add'), audit('fees','create'), ctrl.create)
+ * audit(module, action) — delegates to the platform audit writer so legacy routes get the
+ * same retention, redaction and severity rules as the new modules.
  */
-function audit(module, action, getSeverity = () => 'info') {
-  return async (req, res, next) => {
-    // Intercept response to know the resourceId after creation
+function audit(module, action, getSeverity) {
+  return (req, res, next) => {
     const originalJson = res.json.bind(res);
-    res.json = function (body) {
-      // Fire-and-forget audit log write
-      const user = req.user || {};
-      const severity = getSeverity(action, module);
-      AuditLog.create({
-        tenantId: user.tenantId,
-        branchId: user.branchId,
-        userId: user.userId,
-        userEmail: user.email,
-        userRole: user.role,
-        userName: user.name,
-        module,
-        action,
-        resourceId: req.params?.id || body?.data?._id,
-        resourceType: module,
-        ip: req.ip || req.connection?.remoteAddress,
-        userAgent: req.get('User-Agent'),
-        severity,
-      }).catch(() => {}); // non-blocking; never fail requests due to audit log errors
+
+    res.json = (body) => {
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        record({
+          req,
+          module,
+          action,
+          resourceType: module,
+          resourceId: req.params?.id ?? body?.data?._id ?? null,
+          after: body?.data ?? null,
+          before: req.auditBefore ?? null,
+          reason: req.body?.reason ?? null,
+        });
+      }
       return originalJson(body);
     };
-    next();
+
+    // `getSeverity` was a per-route override; severity is now derived centrally from the
+    // CRITICAL_ACTIONS set. Accepted and ignored so legacy call sites keep working.
+    void getSeverity;
+    return next();
   };
 }
 
-/**
- * Critical action severity helper
- * Used to tag high-risk audit events
- */
-const CRITICAL_ACTIONS = new Set([
-  'fees:approve', 'fees:delete', 'payroll:approve', 'payroll:export',
-  'certificates:add', 'students:delete', 'role_management:add', 'role_management:edit',
-  'audit_logs:export', 'settings:edit',
-]);
-
-function getSeverity(action, module) {
-  if (CRITICAL_ACTIONS.has(`${module}:${action}`)) return 'critical';
-  if (['delete', 'approve', 'export'].includes(action)) return 'warning';
-  return 'info';
-}
-
-module.exports = { checkPermission, applyBranchScope, audit, clearPermissionCache, getPermission };
+module.exports = { checkPermission, applyBranchScope, audit, clearPermissionCache };

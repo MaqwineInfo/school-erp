@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
 import axios from '../../lib/api';
+import { ClassDivisionPicker } from '../../components/academics/ClassDivisionPicker';
 
 type Student = {
   _id: string; name: string; admissionNo: string; grNo?: string; rollNo?: string;
   dob?: string; gender?: string; bloodGroup?: string; category?: string; religion?: string;
   currentAddress?: string; city?: string; state?: string; pinCode?: string;
-  standardId?: { _id: string; name: string }; divisionName?: string; status?: string;
+  standardId?: { _id: string; name: string } | string; divisionName?: string; status?: string;
   isRteStudent?: boolean; admissionDate?: string; stream?: string; house?: string;
   guardians?: Array<{ relation: string; name: string; phone?: string; email?: string; occupation?: string }>;
   health?: { allergies: string[]; conditions: string[]; medications: string[] };
@@ -16,6 +16,11 @@ type Student = {
 };
 
 const TABS = ['Overview', 'Academic', 'Fees', 'Attendance', 'Exams', 'Homework', 'Transport & Hostel', 'Documents'];
+
+function getStandardName(standardId?: Student['standardId']) {
+  if (!standardId) return undefined;
+  return typeof standardId === 'string' ? undefined : standardId.name;
+}
 
 function InfoRow({ label, value }: { label: string; value?: string | number }) {
   return (
@@ -52,8 +57,8 @@ function OverviewTab({ student }: { student: Student }) {
       <div className="card p-5">
         <h3 className="font-semibold text-gray-800 mb-4">🎓 Academic Information</h3>
         <dl className="grid grid-cols-2 gap-4">
-          <InfoRow label="Class" value={student.standardId?.name} />
-          <InfoRow label="Division" value={student.divisionName} />
+          <InfoRow label="Class" value={getStandardName(student.standardId)} />
+          <InfoRow label="Section" value={student.divisionName} />
           <InfoRow label="Stream" value={student.stream} />
           <InfoRow label="House" value={student.house} />
           <InfoRow label="Admission Date" value={student.admissionDate ? new Date(student.admissionDate).toLocaleDateString('en-IN') : undefined} />
@@ -120,7 +125,12 @@ function OverviewTab({ student }: { student: Student }) {
   );
 }
 
-function AcademicTab({ studentId }: { studentId: string }) {
+function AcademicTab({ studentId, student, onUpdate }: { studentId: string; student: Student; onUpdate: (data: Partial<Student>) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [standardId, setStandardId] = useState(typeof student.standardId === 'object' ? student.standardId?._id : student.standardId || '');
+  const [divisionName, setDivisionName] = useState(student.divisionName || '');
+  const [saveError, setSaveError] = useState('');
+
   const { data: attendance } = useQuery({
     queryKey: ['student-attendance', studentId],
     queryFn: () => axios.get(`/attendance?studentId=${studentId}&limit=30`).then(r => r.data.data),
@@ -131,8 +141,45 @@ function AcademicTab({ studentId }: { studentId: string }) {
   const total = records.length;
   const pct = total > 0 ? Math.round((present / total) * 100) : 0;
 
+  const handleSaveClass = () => {
+    setSaveError('');
+    if (!standardId || !divisionName) { setSaveError('Class and section are required'); return; }
+    onUpdate({ standardId, divisionName });
+    setEditing(false);
+  };
+
   return (
     <div className="space-y-4">
+      <div className="card p-4">
+        <div className="flex justify-between items-start mb-3">
+          <h3 className="font-semibold">Class Assignment</h3>
+          {!editing ? (
+            <button className="text-sm text-blue-600 hover:underline" onClick={() => setEditing(true)}>Change Class</button>
+          ) : (
+            <div className="flex gap-2">
+              <button className="text-sm text-gray-500" onClick={() => setEditing(false)}>Cancel</button>
+              <button className="text-sm text-blue-600 font-medium" onClick={handleSaveClass}>Save</button>
+            </div>
+          )}
+        </div>
+        {saveError && <p className="text-sm text-red-600 mb-2">{saveError}</p>}
+        {editing ? (
+          <ClassDivisionPicker
+            standardId={standardId}
+            divisionName={divisionName}
+            onStandardChange={(id) => { setStandardId(id); setDivisionName(''); }}
+            onDivisionChange={setDivisionName}
+          />
+        ) : (
+          <dl className="grid grid-cols-2 gap-4">
+            <InfoRow label="Class" value={getStandardName(student.standardId)} />
+            <InfoRow label="Section" value={student.divisionName} />
+            <InfoRow label="Stream" value={student.stream} />
+            <InfoRow label="House" value={student.house} />
+          </dl>
+        )}
+      </div>
+
       <div className="card p-4">
         <h3 className="font-semibold mb-3">Attendance Summary (Recent 30 Days)</h3>
         <div className="flex gap-6">
@@ -308,7 +355,11 @@ export default function StudentProfilePage() {
 
   const updateStudent = useMutation({
     mutationFn: (data: Partial<Student>) => axios.put(`/students/${id}`, data).then(r => r.data.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['student', id] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['student', id] });
+      qc.invalidateQueries({ queryKey: ['standards'] });
+      qc.invalidateQueries({ queryKey: ['students'] });
+    },
   });
 
   if (isLoading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div></div>;
@@ -327,7 +378,7 @@ export default function StudentProfilePage() {
             <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
               <span>Adm: <strong>{student.admissionNo}</strong></span>
               <span>•</span>
-              <span>{student.standardId?.name} {student.divisionName}</span>
+              <span>{getStandardName(student.standardId)} {student.divisionName}</span>
               <span>•</span>
               <span className={`badge ${student.status === 'active' ? 'badge-green' : 'badge-red'}`}>{student.status}</span>
               {student.isRteStudent && <span className="badge badge-purple">RTE</span>}
@@ -353,7 +404,13 @@ export default function StudentProfilePage() {
       {/* Tab Content */}
       <div>
         {activeTab === 0 && <OverviewTab student={student} />}
-        {activeTab === 1 && <AcademicTab studentId={student._id} />}
+        {activeTab === 1 && (
+          <AcademicTab
+            studentId={student._id}
+            student={student}
+            onUpdate={(data) => updateStudent.mutate(data)}
+          />
+        )}
         {activeTab === 2 && <FeesTab studentId={student._id} />}
         {activeTab === 4 && <ExamsTab studentId={student._id} />}
         {activeTab === 3 && (

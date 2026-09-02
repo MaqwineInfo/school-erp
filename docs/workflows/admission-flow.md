@@ -1,5 +1,9 @@
 # Admission Workflow
 
+> **Status: TARGET (Phase 5 — not yet built).** The `Enrolment` model this document assumed
+> now exists (`modules/academics`), and enrolment, capacity-under-concurrency and fee-demand
+> generation are implemented. The enquiry → application → offer → payment pipeline is not.
+
 ## Sequence Diagram
 
 ```mermaid

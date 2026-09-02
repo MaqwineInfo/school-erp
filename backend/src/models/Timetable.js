@@ -6,6 +6,9 @@ const timetableSchema = new mongoose.Schema({
   academicYearId: { type: mongoose.Schema.Types.ObjectId, ref: 'AcademicYear', required: true },
   standardId: { type: mongoose.Schema.Types.ObjectId, ref: 'Standard', required: true },
   divisionName: { type: String, required: true },
+  /** Phase 3 (ADR-03): the stable academic-group reference. The legacy standardId +
+   * divisionName pair is retained during the dual-write window and dropped afterwards. */
+  academicGroupId: { type: mongoose.Schema.Types.ObjectId, ref: 'AcademicGroup', index: true },
   isActive: { type: Boolean, default: true },
   slots: [{
     dayOfWeek: { type: Number, min: 0, max: 6, required: true }, // 0=Mon

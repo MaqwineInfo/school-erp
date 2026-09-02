@@ -9,6 +9,7 @@ const Subject = require('../models/Subject');
 const Onboarding = require('../models/Onboarding');
 const Role = require('../models/Role');
 const Plan = require('../models/Plan');
+const { normalizeStandardDivisions, validateStudentAssignment, syncDivisionStrength, getActiveAcademicYear } = require('../services/academic.service');
 const { AppError } = require('../shared/errors');
 const { sendSuccess } = require('../shared/response');
 const { seedSystemRoles } = require('../utils/roleSeeder');
@@ -92,7 +93,7 @@ exports.academicSetup = async (req, res) => {
       tenantId, branchId: branch?._id,
       name: s.name, shortName: s.shortName || s.name, order: i,
       stage: s.stage || 'primary',
-      divisions: (s.divisions || ['A']).map(d => ({ name: d, strength: 0 })),
+      divisions: normalizeStandardDivisions(s.divisions),
     }))
   );
 
@@ -159,21 +160,31 @@ exports.importStudents = async (req, res) => {
 
   const Student = require('../models/Student');
   const branch = await Branch.findOne({ tenantId, isHeadOffice: true });
+  const activeYear = await getActiveAcademicYear(tenantId);
 
   let imported = 0, skipped = 0;
   const errors = [];
+  const standardsToSync = new Set();
 
   for (let i = 0; i < students.length; i++) {
     const s = students[i];
     if (!s.name || !s.admissionNo) { errors.push({ row: i + 2, message: 'Name and admissionNo required' }); skipped++; continue; }
+    if (!s.standardId || !s.divisionName) { errors.push({ row: i + 2, message: 'Class and section are required' }); skipped++; continue; }
     try {
-      await Student.create({ ...s, tenantId, branchId: branch?._id });
+      const doc = { ...s, tenantId, branchId: branch?._id };
+      if (!doc.academicYearId && activeYear) doc.academicYearId = activeYear._id;
+      await validateStudentAssignment(tenantId, { standardId: doc.standardId, divisionName: doc.divisionName });
+      doc.divisionName = String(doc.divisionName).trim().toUpperCase();
+      await Student.create(doc);
+      standardsToSync.add(String(doc.standardId));
       imported++;
     } catch (err) {
       errors.push({ row: i + 2, message: err.message });
       skipped++;
     }
   }
+
+  await Promise.all([...standardsToSync].map((id) => syncDivisionStrength(tenantId, id)));
 
   await Onboarding.findOneAndUpdate({ tenantId }, {
     $set: { currentStep: 7, 'steps.importStudents': { totalImported: imported, skipped, errors } },

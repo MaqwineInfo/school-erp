@@ -2,19 +2,21 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import axios from '../../lib/api';
-import { useAuthStore } from '../../stores/auth.store';
+import { ClassDivisionPicker } from '../../components/academics/ClassDivisionPicker';
+import { useAcademicLabels } from '../../hooks/useAcademicLabels';
 
-type Homework = { _id: string; title: string; description?: string; type: string; standardId?: { name: string }; divisionName?: string; subjectId?: { name: string }; teacherId?: { name: string }; dueDate?: string; isActive: boolean; createdAt: string };
+type Homework = { _id: string; title: string; description?: string; type: string; standardId?: string | { _id: string; name: string }; divisionName?: string; subjectId?: { name: string }; teacherId?: { name: string }; dueDate?: string; isActive: boolean; createdAt: string };
 
 const TYPE_LABELS: Record<string, string> = { classwork: '📖 Classwork', homework: '📝 Homework', assignment: '📋 Assignment', project: '🔬 Project' };
 const TYPE_COLORS: Record<string, string> = { classwork: 'badge-blue', homework: 'badge-green', assignment: 'badge-yellow', project: 'badge-purple' };
 
 export default function HomeworkPage() {
   const qc = useQueryClient();
-  const { user } = useAuthStore();
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Homework | null>(null);
-  const [filters, setFilters] = useState({ type: '', standardId: '', from: '', to: '' });
+  const [filters, setFilters] = useState({ type: '', standardId: '', divisionName: '', from: '', to: '' });
+  const [assignClass, setAssignClass] = useState({ standardId: '', divisionName: '' });
+  const labels = useAcademicLabels();
   const { register, handleSubmit, reset, formState: { errors } } = useForm<Partial<Homework>>();
 
   const { data: standards = [] } = useQuery({ queryKey: ['standards'], queryFn: () => axios.get('/academics/standards').then(r => r.data.data) });
@@ -28,7 +30,10 @@ export default function HomeworkPage() {
   const homeworks: Homework[] = Array.isArray(data?.data) ? data.data : data?.data?.items || [];
 
   const save = useMutation({
-    mutationFn: (d: Partial<Homework>) => editing ? axios.put(`/homework/${editing._id}`, d).then(r => r.data) : axios.post('/homework', d).then(r => r.data),
+    mutationFn: (d: Partial<Homework>) => {
+      const payload = { ...d, standardId: assignClass.standardId, divisionName: assignClass.divisionName };
+      return editing ? axios.put(`/homework/${editing._id}`, payload).then(r => r.data) : axios.post('/homework', payload).then(r => r.data);
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['homework'] }); setShowModal(false); setEditing(null); reset(); },
   });
 
@@ -37,7 +42,17 @@ export default function HomeworkPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['homework'] }),
   });
 
-  const openEdit = (hw: Homework) => { setEditing(hw); reset(hw); setShowModal(true); };
+  const openEdit = (hw: Homework) => {
+    setEditing(hw);
+    reset(hw);
+    setAssignClass({
+      standardId: typeof hw.standardId === 'object' && hw.standardId && '_id' in hw.standardId
+        ? hw.standardId._id
+        : String(hw.standardId || ''),
+      divisionName: hw.divisionName || '',
+    });
+    setShowModal(true);
+  };
 
   return (
     <div className="p-6 space-y-5">
@@ -55,10 +70,14 @@ export default function HomeworkPage() {
           <option value="">All Types</option>
           {Object.entries(TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
-        <select value={filters.standardId} onChange={e => setFilters(f => ({ ...f, standardId: e.target.value }))} className="input-field w-40">
-          <option value="">All Classes</option>
-          {(Array.isArray(standards) ? standards : []).map((s: { _id: string; name: string }) => <option key={s._id} value={s._id}>{s.name}</option>)}
-        </select>
+        <ClassDivisionPicker
+          standardId={filters.standardId}
+          divisionName={filters.divisionName}
+          onStandardChange={(id) => setFilters(f => ({ ...f, standardId: id, divisionName: '' }))}
+          onDivisionChange={(name) => setFilters(f => ({ ...f, divisionName: name }))}
+          required={false}
+          className="md:col-span-2"
+        />
         <input type="date" value={filters.from} onChange={e => setFilters(f => ({ ...f, from: e.target.value }))} className="input-field w-40" placeholder="From" />
         <input type="date" value={filters.to} onChange={e => setFilters(f => ({ ...f, to: e.target.value }))} className="input-field w-40" placeholder="To" />
       </div>
@@ -80,7 +99,7 @@ export default function HomeworkPage() {
               <h3 className="font-semibold text-gray-900 mt-2">{hw.title}</h3>
               {hw.description && <p className="text-sm text-gray-500 mt-1 line-clamp-2">{hw.description}</p>}
               <div className="mt-3 space-y-1 text-xs text-gray-500">
-                <div className="flex items-center gap-1">📚 {hw.subjectId?.name} • {hw.standardId?.name} {hw.divisionName && `- ${hw.divisionName}`}</div>
+                <div className="flex items-center gap-1">📚 {hw.subjectId?.name} • {typeof hw.standardId === 'object' ? hw.standardId?.name : hw.standardId} {hw.divisionName && `- ${hw.divisionName}`}</div>
                 <div className="flex items-center gap-1">👤 {hw.teacherId?.name}</div>
                 {hw.dueDate && <div className="flex items-center gap-1 text-red-500">📅 Due: {new Date(hw.dueDate).toLocaleDateString('en-IN')}</div>}
               </div>
@@ -116,16 +135,14 @@ export default function HomeworkPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
                 <input {...register('dueDate')} type="date" className="input-field" />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Class *</label>
-                <select {...register('standardId', { required: true })} className="input-field">
-                  <option value="">Select</option>
-                  {(Array.isArray(standards) ? standards : []).map((s: { _id: string; name: string }) => <option key={s._id} value={s._id}>{s.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Division</label>
-                <input {...register('divisionName')} placeholder="A" className="input-field" />
+              <div className="col-span-2">
+                <ClassDivisionPicker
+                  standardId={assignClass.standardId}
+                  divisionName={assignClass.divisionName}
+                  onStandardChange={(id) => setAssignClass({ standardId: id, divisionName: '' })}
+                  onDivisionChange={(name) => setAssignClass({ standardId: assignClass.standardId, divisionName: name })}
+                  required
+                />
               </div>
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label>

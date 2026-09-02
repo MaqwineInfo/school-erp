@@ -18,6 +18,7 @@ const buildTokenPayload = (user) => ({
   role: user.role,
   email: user.email,
   name: user.name,
+  isSuperAdmin: !!user.isSuperAdmin,
   studentId: user.studentId || null,
   linkedStudentIds: user.linkedStudentIds || [],
 });
@@ -129,9 +130,25 @@ exports.register = async (req, res, next) => {
 };
 
 exports.me = async (req, res, next) => {
-  const user = await User.findById(req.user.userId).populate('tenantId', 'name logo primaryColor');
+  const user = await User.findById(req.user.userId)
+    .populate('tenantId', 'name logo primaryColor slug enabledModules status')
+    .lean();
   if (!user) throw new AppError('User not found', 404);
-  sendSuccess(res, user);
+
+  let enabledModules = [];
+  if (user.tenantId?.enabledModules) {
+    enabledModules = user.tenantId.enabledModules;
+  }
+
+  const userData = { ...user };
+  delete userData.passwordHash;
+
+  sendSuccess(res, {
+    ...userData,
+    isSuperAdmin: !!user.isSuperAdmin,
+    enabledModules,
+    tenant: user.tenantId,
+  });
 };
 
 exports.changePassword = async (req, res, next) => {

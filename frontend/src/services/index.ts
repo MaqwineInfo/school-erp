@@ -31,6 +31,10 @@ export const academicService = {
   createStandard: (data: Partial<Standard>) => post<Standard>('/academics/standards', data),
   updateStandard: (id: string, data: Partial<Standard>) => put<Standard>(`/academics/standards/${id}`, data),
   deleteStandard: (id: string) => del(`/academics/standards/${id}`),
+  addDivision: (standardId: string, name: string) =>
+    post<Standard>(`/academics/standards/${standardId}/divisions`, { name }),
+  removeDivision: (standardId: string, divisionName: string) =>
+    del<Standard>(`/academics/standards/${standardId}/divisions/${encodeURIComponent(divisionName)}`),
 
   listSubjects: () => get<Subject[]>('/academics/subjects'),
   createSubject: (data: Partial<Subject>) => post<Subject>('/academics/subjects', data),

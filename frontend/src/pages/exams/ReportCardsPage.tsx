@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import axios from '../../lib/api';
+import { ClassDivisionPicker } from '../../components/academics/ClassDivisionPicker';
 
 type Student = { _id: string; name: string; admissionNo: string; rollNo?: string };
 type ReportCard = {
@@ -100,11 +101,10 @@ export default function ReportCardsPage() {
   const [studentSearch, setStudentSearch] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [standardId, setStandardId] = useState('');
-  const [divisionName, setDivisionName] = useState('A');
+  const [divisionName, setDivisionName] = useState('');
   const [view, setView] = useState<'single' | 'bulk'>('single');
 
   const { data: exams = [] } = useQuery({ queryKey: ['exams'], queryFn: () => axios.get('/exams').then(r => r.data.data) });
-  const { data: standards = [] } = useQuery({ queryKey: ['standards'], queryFn: () => axios.get('/academics/standards').then(r => r.data.data) });
   const { data: tenant } = useQuery({ queryKey: ['tenant'], queryFn: () => axios.get('/auth/me').then(r => r.data.data?.tenantId) });
 
   const { data: students = [] } = useQuery({
@@ -122,7 +122,7 @@ export default function ReportCardsPage() {
   const { data: classSummary, isLoading: loadingBulk } = useQuery({
     queryKey: ['class-summary', examId, standardId, divisionName],
     queryFn: () => axios.get(`/marks/class-summary?examId=${examId}&standardId=${standardId}&divisionName=${divisionName}`).then(r => r.data.data),
-    enabled: !!(examId && standardId && view === 'bulk'),
+    enabled: !!(examId && standardId && divisionName && view === 'bulk'),
   });
 
   return (
@@ -172,19 +172,14 @@ export default function ReportCardsPage() {
               </div>
             </>
           ) : (
-            <>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Class</label>
-                <select value={standardId} onChange={e => setStandardId(e.target.value)} className="input-field">
-                  <option value="">Select</option>
-                  {(Array.isArray(standards) ? standards : []).map((s: { _id: string; name: string }) => <option key={s._id} value={s._id}>{s.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Division</label>
-                <input value={divisionName} onChange={e => setDivisionName(e.target.value)} className="input-field" />
-              </div>
-            </>
+            <ClassDivisionPicker
+              standardId={standardId}
+              divisionName={divisionName}
+              onStandardChange={setStandardId}
+              onDivisionChange={setDivisionName}
+              required
+              className="md:col-span-2"
+            />
           )}
         </div>
       </div>
@@ -197,7 +192,7 @@ export default function ReportCardsPage() {
       )}
 
       {/* Class Results Table */}
-      {view === 'bulk' && examId && standardId && (
+      {view === 'bulk' && examId && standardId && divisionName && (
         loadingBulk ? <div className="flex justify-center py-10"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div> : classSummary ? (
           <div className="space-y-4">
             {/* Stats Bar */}

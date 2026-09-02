@@ -90,8 +90,9 @@ export interface Standard {
   order: number;
   stage: string;
   streams: string[];
-  divisions: { name: string; classTeacherId?: string; strength: number }[];
+  divisions: { name: string; classTeacherId?: string; strength: number; maxCapacity?: number }[];
   isActive: boolean;
+  totalStudents?: number;
 }
 
 export interface Subject {
@@ -102,6 +103,7 @@ export interface Subject {
   maxMarks: number;
   passMarks: number;
   periodsPerWeek: number;
+  standardIds?: string[];
 }
 
 export interface Enquiry {
@@ -114,6 +116,7 @@ export interface Enquiry {
   parentEmail?: string;
   currentSchool?: string;
   applyingForStandard?: Standard | string;
+  applyingForDivision?: string;
   source: string;
   status: 'new' | 'contacted' | 'school_visit' | 'form_issued' | 'form_submitted' | 'admitted' | 'lost';
   assignedTo?: User | string;

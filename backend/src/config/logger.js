@@ -5,8 +5,15 @@ const fs = require('fs');
 const logsDir = path.join(process.cwd(), 'logs');
 if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
 
+/** Tests exercise every error path on purpose; debug-level output drowns the results. */
+const level = process.env.NODE_ENV === 'test'
+  ? 'error'
+  : process.env.NODE_ENV === 'production'
+    ? 'info'
+    : 'debug';
+
 const logger = winston.createLogger({
-  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+  level,
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.errors({ stack: true }),
@@ -19,7 +26,7 @@ const logger = winston.createLogger({
   ],
 });
 
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
   logger.add(
     new winston.transports.Console({
       format: winston.format.combine(

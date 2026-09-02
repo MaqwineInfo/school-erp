@@ -10,6 +10,9 @@ A multi-tenant SaaS School ERP for the Indian education market (CBSE / ICSE / IB
 
 | Question | Document |
 |---|---|
+| **"What are we building, in what order, and what's already broken?"** | **`docs/feature-brainstorm.md`** — scope definition, locked decisions, module inventory, confirmed defect list, delivery plan. **Read this first.** |
+| **"How is it built / how should I build this?"** | **`docs/architecture/system-architecture.md`** — authoritative technical design. Where it disagrees with the root `.docx` files, this wins for current-state work. |
+| **"How do I know it works?"** | **`docs/verification/e2e-verification.md`** — regression suite for known defects, cross-cutting RBAC/scope suites, per-module checklists, go-live gate. |
 | "What should this feature do, for whom?" (business rules, Indian-context specifics) | `Enterprise_School_ERP_Indian_Specification_v2.md` (818 lines, 38 sections — plaintext, read this one, not the `.docx` twin) |
 | "Who is allowed to do this, with what scope?" (roles, permission matrix, approval workflows) | `RBAC_Permission_Architecture_Plan.md` (1699 lines — the authoritative RBAC model) |
 | "What's the overall system architecture / vision?" | `Enterprise_School_ERP Plan.docx` (docx only — open via the `docx` skill if needed) |
@@ -98,10 +101,38 @@ Full detail in `RBAC_Permission_Architecture_Plan.md`; the condensed version you
 - Errors: throw `shared/errors.js` classes (`ValidationError`, `NotFoundError`, `UnauthorizedError`, `ForbiddenError`, `BadRequestError`, `ConflictError`) — `express-async-errors` + the global `errorHandler` middleware turn these into the response shape above automatically; don't hand-roll try/catch + res.status in controllers.
 - Frontend calls go through `src/lib/api.ts`'s typed `get/post/put/patch/del` helpers (never raw `axios` in a service file) — see `services/student.service.ts` for the pattern.
 
+## Two layers coexist — read this before touching a route
+
+The backend is mid-migration (architecture §21). **New modules live in `backend/src/modules/`
+and are mounted BEFORE the legacy routers**, so their routes win and anything they do not
+define falls through to the old controller. Both layers run side by side; nothing was cut
+over at once.
+
+| Layer | Where | Auth | Scoping | Validation |
+|---|---|---|---|---|
+| **New** (`modules/`) | `modules/<name>/` | `platform/auth/authenticate` → `req.principal` | `guard()` → `req.scope` → `BaseRepository` (mandatory) | zod per route |
+| **Legacy** (`controllers/`) | `controllers/`, `routes/` | `middleware/auth` → `req.user` | none — `tenantId` only | none |
+
+Built as modules: **identity, academics, fees, approvals, exams, attendance, communication.**
+Everything else is still legacy. When you touch a legacy area, port it to a module rather
+than patching in place — and never add a new route to the legacy layer.
+
+**Data access rule:** in a module, never call a Mongoose model directly. Use
+`repo(Model)` from `infra/repository/BaseRepository` and pass `req.scope`. The repository
+has no un-scoped API, which is the point.
+
 ## Known gaps / gotchas
 
-- **No automated test suite** — no Jest/Vitest/Mocha, no `*.test.*` files, no `npm test` script. Verification of new work has to be manual/checklist-driven (see the `feature-e2e-verification` skill below).
-- **`npm run lint` was broken** (ESLint 9 needs flat config, none existed) — fixed by adding minimal `eslint.config.js` to both `backend/` and `frontend/`.
+- **Test suite: `cd backend && npm test`** — Vitest against an in-memory MongoDB replica
+  set (a replica set specifically: transactions do not work on a standalone `mongod`).
+  ~180 tests across 10 files. `tests/setup.js` lowers bcrypt to cost 4; production uses 12.
+- **MongoDB must run as a replica set**, or fee collection, payroll and enrolment cannot be
+  atomic. `mongod --replSet rs0` then `rs.initiate()`. `/health/ready` reports this.
+- **`npm run lint` was broken** (ESLint 9 needs flat config, none existed) — fixed by adding minimal `eslint.config.js` to both `backend/` and `frontend/`. It now also enforces that `Scope.system()` appears only in `*.jobs.js` / `*.events.js`.
+- **Frontend route guards are declared as data** in `src/config/routeRegistry.ts`. Adding a
+  route without an entry there makes it render the 403 state — deliberately.
+- Integrations default to a **`noop` driver**: development runs with zero credentials and
+  logs what would have been sent. An integration is live only when `enabled === true`.
 - No root README — this file is the closest equivalent.
 - `RBAC_Permission_Architecture_Plan copy.md` was a byte-identical duplicate of `RBAC_Permission_Architecture_Plan.md` — removed. Use the non-`copy` file.
 - `backend/.env .eample` was a mis-typed duplicate of `backend/.env.example` — removed. Use `.env.example`.

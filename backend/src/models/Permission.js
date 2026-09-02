@@ -27,6 +27,7 @@ const permissionSchema = new mongoose.Schema({
       'fees', 'payroll', 'hr', 'transport', 'hostel', 'library',
       'inventory', 'expenses', 'certificates', 'events', 'visitor_management',
       'tasks', 'reports', 'settings', 'role_management', 'audit_logs', 'dashboard',
+      'discipline', 'health', 'alumni',
     ],
   },
   // Action flags

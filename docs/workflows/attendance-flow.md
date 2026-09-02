@@ -1,5 +1,11 @@
 # Attendance Workflow
 
+> **Status: CURRENT (Phase 7).** Implemented in `backend/src/modules/attendance`.
+> Multi-source ingestion with 5-minute deduplication, the 24-hour edit window with Principal
+> override, absence notification and long-absence detection all exist, covered by
+> `backend/tests/attendance.test.js`. Events are dispatched through the transactional outbox
+> and consumed by `modules/communication`.
+
 ## Flow Diagram
 
 ```mermaid

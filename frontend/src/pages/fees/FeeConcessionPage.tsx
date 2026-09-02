@@ -84,7 +84,11 @@ export default function FeeConcessionPage() {
 
       {showModal && selected && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <form onSubmit={handleSubmit(d => applyConcession.mutate({ id: selected._id, ...d }))} className="bg-white rounded-2xl p-6 w-full max-w-sm space-y-4">
+          <form onSubmit={handleSubmit((d) => applyConcession.mutate({
+            id: selected._id,
+            concessionAmount: Number(d.concessionAmount),
+            reason: String(d.reason || ''),
+          }))} className="bg-white rounded-2xl p-6 w-full max-w-sm space-y-4">
             <h2 className="text-lg font-bold">Apply Concession</h2>
             <div className="text-sm text-gray-500">
               <div><strong>Student:</strong> {selected.studentId?.name}</div>
